@@ -172,7 +172,7 @@ class MatrixPartStringifier:
 class EigenMatrix:
     """Provide iterators over a Eigen matrix/vector/…"""
 
-    def __init__(self, val):
+    def __init__(self, val: gdb.Value):
         # The gdb extension does not support value template arguments - need to extract them by hand
         val_type = val.type
         if val_type.code == gdb.TYPE_CODE_REF:
@@ -180,7 +180,7 @@ class EigenMatrix:
         self.type = val_type.unqualified().strip_typedefs()
         tag = self.type.tag
         regex = re.compile(r'<.*>')
-        m = regex.findall(tag)[0][1:-1]
+        m: str = regex.findall(tag)[0][1:-1]
         template_params = m.split(',')
         template_params = [x.replace(" ", "") for x in template_params]
 
@@ -200,7 +200,7 @@ class EigenMatrix:
         if len(template_params) > 3:
             self.options = template_params[3]
 
-        self.row_major = (int(self.options) & 0x1)
+        self.row_major = bool(int(self.options) & 0x1)
 
         self.innerType = self.type.template_argument(0)
 
@@ -254,8 +254,8 @@ class EigenMatrixPrinter:
         self.variety = variety
         self.matrix = EigenMatrix(val)
 
-    def item_data(self, iv):
-        index, value = iv
+    def item_data(self, index):
+        value = (self.matrix.data + index).dereference()
         return f'[{index}]', value
 
     @staticmethod
@@ -287,7 +287,7 @@ class EigenMatrixPrinter:
         elif self.matrix.rows > 1 and self.matrix.cols > 1:
             variants = map(self.cell_data, self.matrix.row_first_iterator())
         else:
-            variants = map(self.item_data, enumerate(range(self.matrix.cols * self.matrix.rows)))
+            variants = map(self.item_data, range(self.matrix.cols * self.matrix.rows))
         return chain((
             ('rows', self.matrix.rows),
             ('cols', self.matrix.cols),
@@ -308,14 +308,14 @@ class EigenMatrixPrinter:
 class EigenSparseMatrix:
     """Provide iterators over a Eigen SparseMatrix"""
 
-    def __init__(self, val):
+    def __init__(self, val: gdb.Value):
         type = val.type
         if type.code == gdb.TYPE_CODE_REF:
             type = type.target()
         self.type = type.unqualified().strip_typedefs()
         tag = self.type.tag
         regex = re.compile(r'<.*>')
-        m = regex.findall(tag)[0][1:-1]
+        m: str = regex.findall(tag)[0][1:-1]
         template_params = m.split(',')
         template_params = [x.replace(" ", "") for x in template_params]
 
@@ -323,7 +323,7 @@ class EigenSparseMatrix:
         if len(template_params) > 1:
             self.options = template_params[1]
 
-        self.row_major = (int(self.options) & 0x1)
+        self.row_major = bool(int(self.options) & 0x1)
 
         self.inner_type = self.type.template_argument(0)
 
@@ -332,8 +332,8 @@ class EigenSparseMatrix:
         self.data = self.val['m_data']
         self.data = self.data.cast(self.inner_type.pointer())
 
-        self.outer = self.val['m_outerSize']
-        self.inner = self.val['m_innerSize']
+        self.outer = int(self.val['m_outerSize'])
+        self.inner = int(self.val['m_innerSize'])
         if self.row_major:
             self.rows = self.outer
             self.cols = self.inner
@@ -405,7 +405,7 @@ class EigenSparseMatrix:
 class EigenSparseMatrixPrinter:
     """Print an Eigen SparseMatrix"""
 
-    def __init__(self, variety, val):
+    def __init__(self, variety, val: gdb.Value):
         self.variety = variety
         self.matrix = EigenSparseMatrix(val)
 
@@ -416,42 +416,42 @@ class EigenSparseMatrixPrinter:
 
     def children(self):
         global NEXT_ADDRESS, MAT_ADDRESSES, VIRTUAL_MAT_ADDRESSES
-        if self.variety == 'RowFirst':
-            return map(self.cell_data, self.matrix.row_first_iterator())
-        elif self.variety == 'ColFirst':
-            return map(self.cell_data, self.matrix.col_first_iterator())
-        else:
-            if self.matrix.data:
-                variants = []
-                virtual_addr = NEXT_ADDRESS
-                MAT_ADDRESSES[int(self.matrix.val.address)] = self.matrix
-                try:
-                    if self.matrix.rows > 1 and self.matrix.cols > 1:
-                        t = GdbTypes.get()
-                        variants.append(('RowFirst', t.row_first(self.matrix.val)))
-                        variants.append(('ColFirst', t.col_first(self.matrix.val)))
-                        variants.append(('ByRow', t.by_row(virtual_addr, self.matrix.rows)))
-                        variants.append(('ByCol', t.by_col(virtual_addr, self.matrix.cols)))
+        if self.matrix.data:
+            variants = []
+            virtual_addr = NEXT_ADDRESS
+            MAT_ADDRESSES[int(self.matrix.val.address)] = self.matrix
+            try:
+                if self.matrix.rows > 1 and self.matrix.cols > 1:
+                    t = GdbTypes.get()
+                    variants.append(('RowFirst', t.row_first(self.matrix.val)))
+                    variants.append(('ColFirst', t.col_first(self.matrix.val)))
+                    variants.append(('ByRow', t.by_row(virtual_addr, self.matrix.rows)))
+                    variants.append(('ByCol', t.by_col(virtual_addr, self.matrix.cols)))
 
-                        for i in range(max(self.matrix.rows, self.matrix.cols)):
-                            VIRTUAL_MAT_ADDRESSES[NEXT_ADDRESS] = (self.matrix, i)
-                            NEXT_ADDRESS += t.by_row_type.sizeof
-                except Exception as e:
-                    print(e)
-                    variants.append(('error', str(e)))
-                if not len(variants):
-                    if self.matrix.row_major:
-                        variants = map(self.cell_data, self.matrix.row_first_iterator())
-                    else:
-                        variants = map(self.cell_data, self.matrix.col_first_iterator())
-                return chain((
-                    ('rows', self.matrix.rows),
-                    ('cols', self.matrix.cols),
-                    ('rowMajor', self.matrix.row_major),
-                ),
-                    variants)
+                    for i in range(max(self.matrix.rows, self.matrix.cols)):
+                        VIRTUAL_MAT_ADDRESSES[NEXT_ADDRESS] = (self.matrix, i)
+                        NEXT_ADDRESS += t.by_row_type.sizeof
+            except Exception as e:
+                print(e)
+                variants.append(('error', str(e)))
+            if not len(variants):
+                if self.matrix.row_major:
+                    variants = map(self.cell_data, self.matrix.row_first_iterator())
+                else:
+                    variants = map(self.cell_data, self.matrix.col_first_iterator())
+            return chain((
+                ('rows', self.matrix.rows),
+                ('cols', self.matrix.cols),
+                ('rowMajor', self.matrix.row_major),
+            ),
+                variants)
 
-            return iter([])  # empty matrix, for now
+        return iter([
+            ('rows', self.matrix.rows),
+            ('cols', self.matrix.cols),
+            ('rowMajor', self.matrix.row_major),
+            ('empty', True),
+        ])  # empty matrix, for now
 
     def to_string(self):
         if self.matrix.data:
@@ -514,7 +514,7 @@ def register_eigen_printers(obj):
 def lookup_function(val):
     """Look-up and return a pretty-printer that can print the value"""
     val_type = val.type
-    # print(type, int(val.address) if val.address is not None else 'xxx')
+    # print(val_type, int(val.address) if val.address is not None else 'xxx')
 
     if val_type.code == gdb.TYPE_CODE_REF:
         val_type = val_type.target()

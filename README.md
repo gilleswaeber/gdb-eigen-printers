@@ -37,3 +37,6 @@ git clone https://github.com/gilleswaeber/gdb-eigen-printers.git "$INSTALL_DIR"
 printf >> ~/.gdbinit "\npython\nimport sys\nsys.path.insert(0, r'''%s''')\nfrom gdb_eigen_printers import register_eigen_printers\nregister_eigen_printers(None)\nend\n" "$INSTALL_DIR"
 cp --interactive "$INSTALL_DIR/eigenprinters.cpp" ./
 ```
+
+## TODO
+- Issues with non-initialized memory
