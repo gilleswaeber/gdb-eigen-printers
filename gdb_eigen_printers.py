@@ -345,6 +345,7 @@ class EigenSparseMatrix:
         self.data = self.val['m_data']
         self.data = self.data.cast(self.inner_type.pointer())
 
+        self.compressed = int(val['m_innerNonZeros']) == 0
         self.outer = int(self.val['m_outerSize'])
         self.inner = int(self.val['m_innerSize'])
         if self.row_major:
@@ -354,6 +355,14 @@ class EigenSparseMatrix:
             self.rows = self.inner
             self.cols = self.outer
 
+        # Count non-zeros (SparseCompressedBase.h)
+        if self.compressed:
+            self.non_zero = int(val['m_outerIndex'][self.outer] - val['m_outerIndex'][0])
+        elif self.outer == 0:
+            self.non_zero = 0
+        else:
+            self.non_zero = sum(int(val['m_innerNonZeros'][i]) for i in range(self.outer))
+
     def outer_first_iterator(self):
         for outer in range(self.outer):
             for inner, value in self.outer_iterator(outer):
@@ -361,10 +370,10 @@ class EigenSparseMatrix:
 
     def outer_iterator(self, outer):
         start = self.val['m_outerIndex'][outer]
-        if self.val['m_innerNonZeros']:
-            end = start + self.val['m_innerNonZeros'][outer]
-        else:
+        if self.compressed:
             end = self.val['m_outerIndex'][outer + 1]
+        else:
+            end = start + self.val['m_innerNonZeros'][outer]
         for index in range(start, end):
             inner = int(self.val['m_data']['m_indices'][index])
             yield inner, self.val['m_data']['m_values'][index]
@@ -455,6 +464,8 @@ class EigenSparseMatrixPrinter:
             return chain((
                 ('rows', self.matrix.rows),
                 ('cols', self.matrix.cols),
+                ('nonZero', self.matrix.non_zero),
+                ('compressed', self.matrix.compressed),
                 ('rowMajor', self.matrix.row_major),
             ),
                 variants)
