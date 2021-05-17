@@ -27,14 +27,19 @@
 #      end
 
 import re
+import traceback
 
 import gdb
 from itertools import chain
+
+from compile import SCRIPT_DIR
 
 # Here is the ugly trick…
 VIRTUAL_MAT_ADDRESSES = {}
 NEXT_ADDRESS = 1
 MAT_ADDRESSES = {}
+
+OBJECT_FILE = SCRIPT_DIR / 'eigenprinters.o'
 
 
 class GdbTypes:
@@ -67,7 +72,15 @@ class GdbTypes:
     @classmethod
     def get(cls) -> 'GdbTypes':
         if cls.inst is None:
-            cls.inst = GdbTypes()
+            try:
+                cls.inst = GdbTypes()
+            except gdb.error as e:
+                if OBJECT_FILE.is_file():
+                    gdb.execute(f'add-symbol-file {OBJECT_FILE} 0')
+                    cls.inst = GdbTypes()
+                else:
+                    print('Eigenprinter types missing and library file not found, please run compile.py')
+                    raise
         return cls.inst
 
 
@@ -280,7 +293,7 @@ class EigenMatrixPrinter:
                     VIRTUAL_MAT_ADDRESSES[NEXT_ADDRESS] = (self.matrix, i)
                     NEXT_ADDRESS += t.by_row_type.sizeof
         except Exception as e:
-            print(e)
+            traceback.print_exc()
             variants.append(('error', str(e)))
         if len(variants):
             variants.append(('debugId', virtual_addr))

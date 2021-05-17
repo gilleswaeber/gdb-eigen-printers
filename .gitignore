@@ -2,3 +2,5 @@
 .idea
 # Python
 __pycache__
+# Compiled
+/*.o
