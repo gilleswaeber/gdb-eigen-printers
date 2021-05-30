@@ -30,4 +30,4 @@ g++ -g -c  "$INSTALL_DIR/eigenprinters.cpp"  # or python3 "$INSTALL_DIR/compile.
 ```
 
 ## TODO
-- Issues with non-initialized memory
+- May have issues with non-initialized memory

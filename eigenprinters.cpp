@@ -1,7 +1,5 @@
 // This file declares and instantiates some types for use with the improved Eigen printer
-// It must be linked to the project to allow the printer to be used fully
-// There is no need to include this file with a #include directive
-// Also, do not refer to those types in the code
+// Compile as library and it will be automatically loaded when needed
 // https://github.com/gilleswaeber/gdb-eigen-printers.git
 
 namespace EigenPrinters {

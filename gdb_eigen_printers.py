@@ -39,6 +39,9 @@ VIRTUAL_MAT_ADDRESSES = {}
 NEXT_ADDRESS = 1
 MAT_ADDRESSES = {}
 
+BY_ROW_COL_LIMIT = 500  # when there is more than XXX cols or rows, the ByRow and ByCol views will be disabled
+INVALID_ROW_COL_LIMIT = 200000  # when there is more than XXX cols or rows, consider the object invalid
+
 OBJECT_FILE = SCRIPT_DIR / 'eigenprinters.o'
 
 
@@ -74,7 +77,7 @@ class GdbTypes:
         if cls.inst is None:
             try:
                 cls.inst = GdbTypes()
-            except gdb.error as e:
+            except gdb.error as _:
                 if OBJECT_FILE.is_file():
                     gdb.execute(f'add-symbol-file {OBJECT_FILE} 0')
                     cls.inst = GdbTypes()
@@ -191,23 +194,33 @@ class EigenMatrix:
         if val_type.code == gdb.TYPE_CODE_REF:
             val_type = val_type.target()
         self.type = val_type.unqualified().strip_typedefs()
+        self.invalid = False
         tag = self.type.tag
         regex = re.compile(r'<.*>')
         m: str = regex.findall(tag)[0][1:-1]
         template_params = m.split(',')
         template_params = [x.replace(" ", "") for x in template_params]
 
-        if template_params[1] == '-0x00000000000000001' or template_params[1] == '-0x000000001' or template_params[
-            1] == '-1':
+        if template_params[1] == '-0x00000000000000001'\
+                or template_params[1] == '-0x000000001'\
+                or template_params[1] == '-1':
             self.rows = val['m_storage']['m_rows']
         else:
             self.rows = int(template_params[1])
 
-        if template_params[2] == '-0x00000000000000001' or template_params[2] == '-0x000000001' or template_params[
-            2] == '-1':
+        if template_params[2] == '-0x00000000000000001'\
+                or template_params[2] == '-0x000000001'\
+                or template_params[2] == '-1':
             self.cols = val['m_storage']['m_cols']
         else:
             self.cols = int(template_params[2])
+
+        if self.rows < 0 or self.cols < 0:
+            self.invalid = True
+            return
+        if self.rows > INVALID_ROW_COL_LIMIT or self.cols > INVALID_ROW_COL_LIMIT:
+            self.invalid = True
+            return
 
         self.options = 0  # default value
         if len(template_params) > 3:
@@ -260,7 +273,7 @@ class EigenMatrix:
 
 
 class EigenMatrixPrinter:
-    "Print Eigen Matrix or Array of some kind"
+    """Print Eigen Matrix or Array of some kind"""
 
     def __init__(self, variety, val):
         # Save the variety (presumably "Matrix" or "Array") for later usage
@@ -277,6 +290,12 @@ class EigenMatrixPrinter:
         return f'[{row},{col}]', value
 
     def children(self):
+        if self.matrix.invalid:
+            return iter([
+                ('rows', self.matrix.rows),
+                ('cols', self.matrix.cols),
+                ('invalid', self.matrix.invalid),
+            ])
         global MAT_ADDRESSES, VIRTUAL_MAT_ADDRESSES, NEXT_ADDRESS
         variants = []
         virtual_addr = NEXT_ADDRESS
@@ -286,8 +305,9 @@ class EigenMatrixPrinter:
                 t = GdbTypes.get()
                 variants.append(('RowFirst', t.row_first(self.matrix.val)))
                 variants.append(('ColFirst', t.col_first(self.matrix.val)))
-                variants.append(('ByRow', t.by_row(virtual_addr, self.matrix.rows)))
-                variants.append(('ByCol', t.by_col(virtual_addr, self.matrix.cols)))
+                if self.matrix.cols <= BY_ROW_COL_LIMIT and self.matrix.rows <= BY_ROW_COL_LIMIT:
+                    variants.append(('ByRow', t.by_row(virtual_addr, self.matrix.rows)))
+                    variants.append(('ByCol', t.by_col(virtual_addr, self.matrix.cols)))
 
                 for i in range(max(self.matrix.rows, self.matrix.cols)):
                     VIRTUAL_MAT_ADDRESSES[NEXT_ADDRESS] = (self.matrix, i)
@@ -322,10 +342,10 @@ class EigenSparseMatrix:
     """Provide iterators over a Eigen SparseMatrix"""
 
     def __init__(self, val: gdb.Value):
-        type = val.type
-        if type.code == gdb.TYPE_CODE_REF:
-            type = type.target()
-        self.type = type.unqualified().strip_typedefs()
+        val_type = val.type
+        if val_type.code == gdb.TYPE_CODE_REF:
+            val_type = val_type.target()
+        self.type = val_type.unqualified().strip_typedefs()
         tag = self.type.tag
         regex = re.compile(r'<.*>')
         m: str = regex.findall(tag)[0][1:-1]
@@ -374,7 +394,7 @@ class EigenSparseMatrix:
             end = self.val['m_outerIndex'][outer + 1]
         else:
             end = start + self.val['m_innerNonZeros'][outer]
-        for index in range(start, end):
+        for index in range(int(start), int(end)):
             inner = int(self.val['m_data']['m_indices'][index])
             yield inner, self.val['m_data']['m_values'][index]
 
@@ -447,8 +467,9 @@ class EigenSparseMatrixPrinter:
                     t = GdbTypes.get()
                     variants.append(('RowFirst', t.row_first(self.matrix.val)))
                     variants.append(('ColFirst', t.col_first(self.matrix.val)))
-                    variants.append(('ByRow', t.by_row(virtual_addr, self.matrix.rows)))
-                    variants.append(('ByCol', t.by_col(virtual_addr, self.matrix.cols)))
+                    if self.matrix.cols <= BY_ROW_COL_LIMIT and self.matrix.rows <= BY_ROW_COL_LIMIT:
+                        variants.append(('ByRow', t.by_row(virtual_addr, self.matrix.rows)))
+                        variants.append(('ByCol', t.by_col(virtual_addr, self.matrix.cols)))
 
                     for i in range(max(self.matrix.rows, self.matrix.cols)):
                         VIRTUAL_MAT_ADDRESSES[NEXT_ADDRESS] = (self.matrix, i)
@@ -494,10 +515,10 @@ class EigenQuaternionPrinter:
 
     def __init__(self, val):
         # The gdb extension does not support value template arguments - need to extract them by hand
-        type = val.type
-        if type.code == gdb.TYPE_CODE_REF:
-            type = type.target()
-        self.type = type.unqualified().strip_typedefs()
+        val_type = val.type
+        if val_type.code == gdb.TYPE_CODE_REF:
+            val_type = val_type.target()
+        self.type = val_type.unqualified().strip_typedefs()
         self.innerType = self.type.template_argument(0)
         self.val = val
 
