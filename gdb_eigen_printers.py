@@ -10,21 +10,8 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 # Pretty printers for Eigen::Matrix
-# This is still pretty basic as the python extension to gdb is still pretty basic. 
 # It cannot handle complex eigen types and it doesn't support many of the other eigen types
 # This code supports fixed size as well as dynamic size matrices
-
-# To use it:
-#
-# * Create a directory and put the file as well as an empty __init__.py in 
-#   that directory.
-# * Create a ~/.gdbinit file, that contains the following:
-#      python
-#      import sys
-#      sys.path.insert(0, '/path/to/eigen/printer/directory')
-#      from gdb_eigen_printers import register_eigen_printers
-#      register_eigen_printers(None)
-#      end
 
 import re
 import traceback
@@ -309,18 +296,17 @@ class EigenMatrixPrinter:
                     variants.append(('ByRow', t.by_row(virtual_addr, self.matrix.rows)))
                     variants.append(('ByCol', t.by_col(virtual_addr, self.matrix.cols)))
 
-                for i in range(max(self.matrix.rows, self.matrix.cols)):
-                    VIRTUAL_MAT_ADDRESSES[NEXT_ADDRESS] = (self.matrix, i)
-                    NEXT_ADDRESS += t.by_row_type.sizeof
+                    for i in range(max(self.matrix.rows, self.matrix.cols)):
+                        VIRTUAL_MAT_ADDRESSES[NEXT_ADDRESS] = (self.matrix, i)
+                        NEXT_ADDRESS += t.by_row_type.sizeof
         except Exception as e:
             traceback.print_exc()
             variants.append(('error', str(e)))
-        if len(variants):
-            variants.append(('debugId', virtual_addr))
-        elif self.matrix.rows > 1 and self.matrix.cols > 1:
-            variants = map(self.cell_data, self.matrix.row_first_iterator())
-        else:
-            variants = map(self.item_data, range(self.matrix.cols * self.matrix.rows))
+        if not len(variants):
+            if self.matrix.rows > 1 and self.matrix.cols > 1:
+                variants = map(self.cell_data, self.matrix.row_first_iterator())
+            else:
+                variants = map(self.item_data, range(self.matrix.cols * self.matrix.rows))
         return chain((
             ('rows', self.matrix.rows),
             ('cols', self.matrix.cols),
@@ -471,9 +457,9 @@ class EigenSparseMatrixPrinter:
                         variants.append(('ByRow', t.by_row(virtual_addr, self.matrix.rows)))
                         variants.append(('ByCol', t.by_col(virtual_addr, self.matrix.cols)))
 
-                    for i in range(max(self.matrix.rows, self.matrix.cols)):
-                        VIRTUAL_MAT_ADDRESSES[NEXT_ADDRESS] = (self.matrix, i)
-                        NEXT_ADDRESS += t.by_row_type.sizeof
+                        for i in range(max(self.matrix.rows, self.matrix.cols)):
+                            VIRTUAL_MAT_ADDRESSES[NEXT_ADDRESS] = (self.matrix, i)
+                            NEXT_ADDRESS += t.by_row_type.sizeof
             except Exception as e:
                 print(e)
                 variants.append(('error', str(e)))
