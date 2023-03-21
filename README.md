@@ -2,6 +2,8 @@ Improved GDB Eigen Printers
 ===========================
 Allows browsing Eigen objects in the GDB debugger in a more convenient way, especially in IDEs like CLion.
 
+Based on the built-in Eigen printer script https://gitlab.com/libeigen/eigen/-/blob/master/debug/gdb/printers.py
+
 ## Features
 - Matrices in row-first or column-first order
 - Support for sparse matrices
@@ -29,5 +31,8 @@ printf >> ~/.gdbinit "\npython\nimport sys\nsys.path.insert(0, r'''%s''')\nfrom 
 g++ -g -c "$INSTALL_DIR/eigenprinters.cpp" -o "$INSTALL_DIR/eigenprinters.o"  # or python3 "$INSTALL_DIR/compile.py"
 ```
 
-## TODO
+## License
+As for the original, the code is available under the [Mozilla Public License, v. 2.0](http://mozilla.org/MPL/2.0/)
+
+## Known issues
 - May have issues with non-initialized memory
